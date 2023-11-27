@@ -34,6 +34,13 @@ pub async fn main() {
                 .help("HOS server password"),
         )
         .arg(
+            Arg::new("hos-https")
+                .long("hos-https")
+                .value_name("HOS-HTTPS")
+                .num_args(0)
+                .help("Enable if your HOS server uses HTTPS. OFF by default."),
+        )
+        .arg(
             Arg::new("mongo_location")
                 .short('m')
                 .value_name("MONGO")
@@ -67,6 +74,8 @@ pub async fn main() {
     let hos_server_passwd: Option<String> = matches
         .get_one::<String>("hos_passwd")
         .map(|x| x.to_string());
+
+    let hos_server_https: bool = matches.get_flag("hos-https");
 
     let mongo_db_creds: String = matches
         .get_one::<String>("mongo_location")
@@ -124,6 +133,7 @@ pub async fn main() {
         hos_server_ip,
         hos_server_port,
         hos_server_passwd,
+        hos_server_https,
         lastfm_api,
     ));
     park();

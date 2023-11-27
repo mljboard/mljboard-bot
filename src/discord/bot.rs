@@ -20,6 +20,7 @@ struct Handler {
     pub hos_server_ip: String,
     pub hos_server_port: u16,
     pub hos_server_passwd: Option<String>,
+    pub hos_server_https: bool,
     pub reqwest_client: reqwest::Client,
     pub lastfm_api: Option<String>,
 }
@@ -78,9 +79,12 @@ impl Handler {
         }
         match assigned_pairing_code {
             Some(pairing_code) => {
+                let base = match self.hos_server_https {
+                    true => "https",
+                    false => "http",
+                };
                 let connections = get_hos_connections(
-                    // TODO: allow https
-                    "http://".to_string(),
+                    base.to_string(),
                     self.hos_server_ip.clone(),
                     self.hos_server_port,
                     self.hos_server_passwd.clone(),
@@ -116,6 +120,7 @@ impl Handler {
                     self.hos_server_ip.clone(),
                     self.hos_server_port,
                     self.hos_server_passwd.clone(),
+                    self.hos_server_https,
                 );
                 Some(creds)
             }
@@ -177,9 +182,7 @@ impl Handler {
                     Err(error) => Err(Some(error)),
                 }
             }
-            None => {
-                Err(None)
-            }
+            None => Err(None),
         }
     }
 
@@ -200,14 +203,13 @@ impl Handler {
             )
             .await;
         if creds.is_err() {
-            self
-                .handle_hos_user(
-                    pairing_code_cursor,
-                    formatted_user,
-                    ctx.clone(),
-                    msg.clone(),
-                )
-                .await
+            self.handle_hos_user(
+                pairing_code_cursor,
+                formatted_user,
+                ctx.clone(),
+                msg.clone(),
+            )
+            .await
         } else {
             Some(creds.unwrap())
         }
@@ -438,6 +440,7 @@ pub async fn run_bot(
     hos_server_ip: String,
     hos_server_port: u16,
     hos_server_passwd: Option<String>,
+    hos_server_https: bool,
     lastfm_api: Option<String>,
 ) {
     let intents = GatewayIntents::GUILD_MESSAGES
@@ -450,6 +453,7 @@ pub async fn run_bot(
             hos_server_ip,
             hos_server_port,
             hos_server_passwd,
+            hos_server_https,
             reqwest_client: reqwest::Client::builder().build().unwrap(),
             lastfm_api,
         })

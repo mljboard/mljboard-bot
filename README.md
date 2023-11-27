@@ -7,6 +7,6 @@ WIP, unfinished.
 ## Requirements
 
 - A Discord bot token. `-d <DISCORD BOT TOKEN>`
-- A [HOS server](https://github.com/duckfromdiscord/hos-rv) and its password. `-j <IP> -k <PORT> -s <PASSWD>`
+- A [HOS server](https://github.com/duckfromdiscord/hos-rv) and its password. `-j <IP> -k <PORT> -s <PASSWD>` and supply `--hos-https` if it's secure (recommended).
 - A MongoDB database. `-m mongodb://x:x@x/x`. `mljboard-bot` should create any missing collections on its own.
 - A Last.FM API key. `-l <API>`
