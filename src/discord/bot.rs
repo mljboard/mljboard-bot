@@ -80,8 +80,8 @@ impl Handler {
         match assigned_pairing_code {
             Some(pairing_code) => {
                 let base = match self.hos_server_https {
-                    true => "https",
-                    false => "http",
+                    true => "https://",
+                    false => "http://",
                 };
                 let connections = get_hos_connections(
                     base.to_string(),
