@@ -101,6 +101,21 @@ pub async fn main() {
         .expect("Failed to create Discord pairing codes collection");
     }
 
+    if !(db
+        .list_collection_names(None)
+        .await
+        .unwrap()
+        .contains(&"discord_websites".to_string()))
+    {
+        log::warn!("Website collection not found in DB. Creating.");
+        db.create_collection(
+            "discord_websites",
+            CreateCollectionOptions::builder().build(),
+        )
+        .await
+        .expect("Failed to create Discord websites collection");
+    }
+
     log::info!("Finished checking for collections. Spawning bot thread.");
 
     tokio::task::spawn(mljboard_bot::discord::bot::run_bot(

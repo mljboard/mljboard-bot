@@ -14,11 +14,8 @@ pub async fn get_hos_connections(
 ) -> HOSConnectionList {
     let mut builder =
         client.get(hos_server_base + &hos_server_ip + ":" + &hos_server_port.to_string() + "/list");
-    match hos_server_passwd {
-        Some(passwd) => {
-            builder = builder.header("HOS-PASSWD", passwd);
-        }
-        None => (),
+    if let Some(passwd) =  hos_server_passwd {
+        builder = builder.header("HOS-PASSWD", passwd);
     }
     let response = builder.send().await;
     response.unwrap().json::<HOSConnectionList>().await.unwrap()

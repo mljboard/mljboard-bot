@@ -22,3 +22,4 @@ env_logger = "0.10.1"
 futures = "0.3.29"
 mljcl = { git = "https://github.com/duckfromdiscord/mljcl", version = "0.4.1" }
 lastfm = "0.6.1"
+url = "2.5.0"
