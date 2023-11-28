@@ -5,11 +5,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
+[features]
+default = ["shuttle"]
+shuttle = ["dep:shuttle-runtime", "dep:shuttle-secrets", "dep:shuttle-serenity", "dep:shuttle-shared-db"]
+
 [dependencies]
 log = "0.4.20"
 clap = "4.4.8"
 mongodb = "2.7.1"
-serenity = { version = "0.11.7", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
+serenity = { version = "0.12.0", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
 tokio = { version = "1.34.0", features = ["rt", "time", "macros"] }
 bson = "2.7.0"
 rand = "0.8.5"
@@ -23,3 +28,7 @@ futures = "0.3.29"
 mljcl = { git = "https://github.com/duckfromdiscord/mljcl", version = "0.4.1" }
 lastfm = "0.6.1"
 url = "2.5.0"
+shuttle-runtime = { optional = true, version = "0.34.0" }
+shuttle-secrets = { optional = true, version = "0.34.0" }
+shuttle-serenity = { optional = true, version = "0.34.0" }
+shuttle-shared-db = { optional = true, version = "0.34.0", features = ["mongodb"] }

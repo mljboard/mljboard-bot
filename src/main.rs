@@ -1,7 +1,61 @@
 use clap::{Arg, Command};
-use mongodb::options::CreateCollectionOptions;
+use mongodb::{options::CreateCollectionOptions, Database};
 use std::thread::park;
 
+pub async fn run(
+    bot_token: String,
+    hos_server_ip: String,
+    hos_server_port: u16,
+    hos_server_passwd: Option<String>,
+    hos_server_https: bool,
+    db: Database,
+    lastfm_api: Option<String>,
+) -> serenity::client::ClientBuilder {
+    if !(db
+        .list_collection_names(None)
+        .await
+        .unwrap()
+        .contains(&"discord_pairing_codes".to_string()))
+    {
+        log::warn!("Pairing code collection not found in DB. Creating.");
+        db.create_collection(
+            "discord_pairing_codes",
+            CreateCollectionOptions::builder().build(),
+        )
+        .await
+        .expect("Failed to create Discord pairing codes collection");
+    }
+
+    if !(db
+        .list_collection_names(None)
+        .await
+        .unwrap()
+        .contains(&"discord_websites".to_string()))
+    {
+        log::warn!("Website collection not found in DB. Creating.");
+        db.create_collection(
+            "discord_websites",
+            CreateCollectionOptions::builder().build(),
+        )
+        .await
+        .expect("Failed to create Discord websites collection");
+    }
+
+    log::info!("Finished checking for collections. Spawning bot thread.");
+
+    return mljboard_bot::discord::bot::build_bot(
+        bot_token,
+        db,
+        hos_server_ip,
+        hos_server_port,
+        hos_server_passwd,
+        hos_server_https,
+        lastfm_api,
+    )
+    .await;
+}
+
+#[cfg(not(feature = "shuttle"))]
 #[tokio::main]
 pub async fn main() {
     env_logger::init_from_env(
@@ -60,6 +114,8 @@ pub async fn main() {
         )
         .get_matches();
 
+    let bot_token = matches.get_one::<String>("bot_token").unwrap().to_string();
+
     let hos_server_ip: String = matches
         .get_one::<String>("hos_ip")
         .expect("HOS IP required")
@@ -95,46 +151,53 @@ pub async fn main() {
 
     log::info!("Connected to database");
 
-    if !(db
-        .list_collection_names(None)
-        .await
-        .unwrap()
-        .contains(&"discord_pairing_codes".to_string()))
-    {
-        log::warn!("Pairing code collection not found in DB. Creating.");
-        db.create_collection(
-            "discord_pairing_codes",
-            CreateCollectionOptions::builder().build(),
-        )
-        .await
-        .expect("Failed to create Discord pairing codes collection");
-    }
-
-    if !(db
-        .list_collection_names(None)
-        .await
-        .unwrap()
-        .contains(&"discord_websites".to_string()))
-    {
-        log::warn!("Website collection not found in DB. Creating.");
-        db.create_collection(
-            "discord_websites",
-            CreateCollectionOptions::builder().build(),
-        )
-        .await
-        .expect("Failed to create Discord websites collection");
-    }
-
-    log::info!("Finished checking for collections. Spawning bot thread.");
-
-    tokio::task::spawn(mljboard_bot::discord::bot::run_bot(
-        matches.get_one::<String>("bot_token").unwrap().to_string(),
-        db,
+    let client_builder = run(
+        bot_token,
         hos_server_ip,
         hos_server_port,
         hos_server_passwd,
         hos_server_https,
+        db,
         lastfm_api,
-    ));
-    park();
+    )
+    .await;
+
+    let mut client = client_builder.await.unwrap();
+
+    client.start().await.unwrap();
+}
+
+#[cfg(feature = "shuttle")]
+use shuttle_secrets::SecretStore;
+
+#[cfg(feature = "shuttle")]
+#[shuttle_runtime::main]
+async fn serenity(
+    #[shuttle_secrets::Secrets] secret_store: SecretStore,
+    #[shuttle_shared_db::MongoDb] db: Database,
+) -> shuttle_serenity::ShuttleSerenity {
+    let bot_token: String = secret_store.get("BOT_TOKEN").unwrap();
+    let hos_server_ip: String = secret_store.get("HOS_IP").unwrap();
+    let hos_server_port: u16 = secret_store
+        .get("HOS_PORT")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    let hos_server_passwd: Option<String> = secret_store.get("HOS_PASSWD");
+    let hos_server_https: bool = secret_store.get("HOS_HTTPS").unwrap() == "yes"; // hoping for a `bool` option in the secret store
+    let lastfm_api = secret_store.get("LFM_API");
+
+    let client_builder = run(
+        bot_token,
+        hos_server_ip,
+        hos_server_port,
+        hos_server_passwd,
+        hos_server_https,
+        db,
+        lastfm_api,
+    )
+    .await;
+    let client: serenity::Client = client_builder.await.unwrap();
+
+    Ok(shuttle_serenity::SerenityService(client))
 }

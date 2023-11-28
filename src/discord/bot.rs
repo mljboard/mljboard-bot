@@ -1,4 +1,5 @@
 use crate::hos::*;
+use core::num::NonZeroU16;
 use futures::stream::StreamExt;
 use mljcl::history::numscrobbles_async;
 use mljcl::range::Range;
@@ -6,7 +7,9 @@ use mljcl::MalojaCredentials;
 use mongodb::bson::{doc, Document};
 use mongodb::options::{DeleteOptions, InsertOneOptions};
 use mongodb::{Cursor, Database};
+use serenity::all::CreateMessage;
 use serenity::async_trait;
+use serenity::builder::CreateEmbed;
 use serenity::model::channel::PrivateChannel;
 use serenity::model::gateway::Ready;
 use serenity::model::prelude::Message;
@@ -25,8 +28,22 @@ struct Handler {
     pub lastfm_api: Option<String>,
 }
 
+fn option_nonzerou16_to_u16(input: Option<NonZeroU16>) -> u16 {
+    // we want to keep the `#0` after the user since any databases created
+    // before this commit will have it
+    // it can't hurt
+    match input {
+        Some(output) => output.get(),
+        None => 0,
+    }
+}
+
 pub fn format_user(user: User) -> String {
-    format!("{}#{}", user.name, user.discriminator)
+    format!(
+        "{}#{}",
+        user.name,
+        option_nonzerou16_to_u16(user.discriminator)
+    )
 }
 
 pub async fn try_dm_channel(
@@ -255,16 +272,16 @@ impl EventHandler for Handler {
                         )
                         .await
                         .unwrap();
-                    dm_channel.send_message(ctx, |m| {
-                            m.content(format!("You have been assigned the pairing code `{}`. Make sure to pass this to your HOS client.", key))
-                        }).await.unwrap();
+                    dm_channel.send_message(ctx,
+                            CreateMessage::new().content(format!("You have been assigned the pairing code `{}`. Make sure to pass this to your HOS client.", key))
+                        ).await.unwrap();
                 } else {
                     dm_channel
-                            .send_message(ctx, |m| {
-                                m.content(
+                            .send_message(ctx,
+                                CreateMessage::new().content(
                                     "You've already made a pairing code, or you have a website linked. Do `!reset` to revoke the code and/or remove the website.",
                                 )
-                            })
+                            )
                             .await
                             .unwrap();
                 }
@@ -309,13 +326,14 @@ impl EventHandler for Handler {
                 while let Some(pair) = website_cursor.next().await {
                     if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
                         dm_channel
-                            .send_message(ctx.clone(), |m| {
-                                m.content(format!(
+                            .send_message(
+                                ctx.clone(),
+                                CreateMessage::new().content(format!(
                                     "Removing your website `{}` from mljboard's database. \
                             Run `!site_setup` to assign yourself one.",
                                     pair.clone().unwrap().get_str("website").unwrap_or("[none]")
-                                ))
-                            })
+                                )),
+                            )
                             .await
                             .unwrap();
                         websites
@@ -327,16 +345,17 @@ impl EventHandler for Handler {
                 while let Some(pair) = pairing_code_cursor.next().await {
                     if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
                         dm_channel
-                            .send_message(ctx.clone(), |m| {
-                                m.content(format!(
+                            .send_message(
+                                ctx.clone(),
+                                CreateMessage::new().content(format!(
                                     "Removing your pairing code `{}` from mljboard's database. \
                             Run `!hos_setup` to be issued a new one.",
                                     pair.clone()
                                         .unwrap()
                                         .get_str("pairing_code")
                                         .unwrap_or("[none]")
-                                ))
-                            })
+                                )),
+                            )
                             .await
                             .unwrap();
                         pairing_codes
@@ -347,9 +366,11 @@ impl EventHandler for Handler {
                     }
                 }
                 dm_channel
-                    .send_message(ctx.clone(), |m| {
-                        m.content("We couldn't find any pairing codes that were yours.")
-                    })
+                    .send_message(
+                        ctx.clone(),
+                        CreateMessage::new()
+                            .content("We couldn't find any pairing codes that were yours."),
+                    )
                     .await
                     .unwrap();
             }
@@ -381,13 +402,15 @@ impl EventHandler for Handler {
                 .await
                 .unwrap();
                 msg.channel_id
-                    .send_message(ctx, |m| {
-                        m.embed(|e| {
-                            e.title(format!("{}'s scrobbles", msg.author.name))
-                                .field("All time", all_time_scrobbles, false)
-                                .field("This year", this_year_scrobbles, false)
-                        })
-                    })
+                    .send_message(
+                        ctx,
+                        CreateMessage::new().embed(
+                            CreateEmbed::new()
+                                .title(format!("{}'s scrobbles", msg.author.name))
+                                .field("All time", all_time_scrobbles.to_string(), false)
+                                .field("This year", this_year_scrobbles.to_string(), false),
+                        ),
+                    )
                     .await
                     .unwrap();
             };
@@ -413,12 +436,14 @@ impl EventHandler for Handler {
                 .await
                 .unwrap();
                 msg.channel_id
-                    .send_message(ctx, |m| {
-                        m.embed(|e| {
-                            e.title(format!("{}'s scrobbles for {}", msg.author.name, arg))
-                                .field("All time", all_time_scrobbles, false)
-                        })
-                    })
+                    .send_message(
+                        ctx,
+                        CreateMessage::new().embed(
+                            CreateEmbed::new()
+                                .title(format!("{}'s scrobbles", msg.author.name))
+                                .field("All time", all_time_scrobbles.to_string(), false),
+                        ),
+                    )
                     .await
                     .unwrap();
             }
@@ -426,15 +451,11 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        log::info!(
-            "{}#{} is connected!",
-            ready.user.name,
-            ready.user.discriminator
-        );
+        log::info!("{} is connected!", format_user(ready.user.into()));
     }
 }
 
-pub async fn run_bot(
+pub async fn build_bot(
     token: String,
     db: Database,
     hos_server_ip: String,
@@ -442,25 +463,18 @@ pub async fn run_bot(
     hos_server_passwd: Option<String>,
     hos_server_https: bool,
     lastfm_api: Option<String>,
-) {
+) -> serenity::client::ClientBuilder {
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT;
 
-    let mut client = Client::builder(&token, intents)
-        .event_handler(Handler {
-            db,
-            hos_server_ip,
-            hos_server_port,
-            hos_server_passwd,
-            hos_server_https,
-            reqwest_client: reqwest::Client::builder().build().unwrap(),
-            lastfm_api,
-        })
-        .await
-        .expect("Error creating Discord client");
-
-    if let Err(why) = client.start().await {
-        log::error!("Discord client error: {why:?}");
-    }
+    Client::builder(&token, intents).event_handler(Handler {
+        db,
+        hos_server_ip,
+        hos_server_port,
+        hos_server_passwd,
+        hos_server_https,
+        reqwest_client: reqwest::Client::builder().build().unwrap(),
+        lastfm_api,
+    })
 }

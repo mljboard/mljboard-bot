@@ -4,6 +4,12 @@ The main part of the `mljboard` project. The `mljboard-bot` Discord bot allows D
 
 WIP, unfinished.
 
+## Optional shuttle integration
+
+**Compile with `--no-default-features` to disable shuttle integration.**
+
+Create a `Secrets.toml` following the example in `Secrets.toml.example`. Keep in mind everything has to be strings at the moment.
+
 ## Requirements
 
 - A Discord bot token. `-d <DISCORD BOT TOKEN>`
