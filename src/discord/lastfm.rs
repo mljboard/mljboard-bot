@@ -14,7 +14,7 @@ pub async fn get_lastfm_user(
     username: String,
     from: Option<i64>,
     to: Option<i64>,
-) -> Vec<RecordedTrack> {
+) -> Option<Vec<RecordedTrack>> {
     let mut message = msg
         .channel_id
         .send_message(
@@ -33,31 +33,40 @@ pub async fn get_lastfm_user(
 
     let user = get_lastfm_client(username.clone(), api.clone()).await;
 
-    let recent_stream = user.recent_tracks(from, to).await.unwrap().into_stream();
-    pin_mut!(recent_stream);
-    let mut tracks: Vec<RecordedTrack> = vec![];
-    while let Some(track) = recent_stream.next().await {
-        tracks.push(track.unwrap());
-        if tracks.len() % 1000 == 0 {
-            message
-                .edit(
-                    ctx.clone(),
-                    EditMessage::new().embed(
-                        CreateEmbed::new()
-                            .title(format!(
-                                "Working on scrobbles for LastFM user {}... ({} loaded)",
-                                username.clone(),
-                                tracks.len()
-                            ))
-                            .image(LOADING_GIF),
-                    ),
-                )
-                .await
-                .expect("Error editing message");
+    let recent_stream = user.recent_tracks(from, to).await.map(|x| x.into_stream());
+    let mut ret: Option<Vec<RecordedTrack>> = None;
+    if let Ok(recent_stream) = recent_stream {
+        pin_mut!(recent_stream);
+        let mut tracks = vec![];
+        while let Some(track) = recent_stream.next().await {
+            tracks.push(track.unwrap());
+            if tracks.len() % 1000 == 0 {
+                message
+                    .edit(
+                        ctx.clone(),
+                        EditMessage::new().embed(
+                            CreateEmbed::new()
+                                .title(format!(
+                                    "Working on scrobbles for LastFM user {}... ({} loaded)",
+                                    username.clone(),
+                                    tracks.len()
+                                ))
+                                .image(LOADING_GIF),
+                        ),
+                    )
+                    .await
+                    .expect("Error editing message");
+            }
         }
+
+        ret = Some(tracks);
     }
 
-    tracks
+    // we don't unwrap here just in case the bot isn't able to delete its own messages
+    // this is unlikely but there's no reason to crash the entire command for that
+    let _ = message.delete(ctx.clone()).await;
+
+    ret
 }
 
 pub async fn lfmuser_cmd(ctx: Context, msg: Message, api: Option<String>, arg: String) {
@@ -78,13 +87,18 @@ pub async fn lfmuser_cmd(ctx: Context, msg: Message, api: Option<String>, arg: S
             )
             .await;
 
+            let trackcount = match tracks {
+                Some(tracks) => tracks.len().to_string(),
+                None => "[user not found]".to_string(),
+            };
+
             msg.channel_id
                 .send_message(
                     ctx,
                     CreateMessage::new().embed(
                         CreateEmbed::new()
                             .title(format!("LastFM user {}'s scrobbles", arg.clone()))
-                            .field("Within the past year", tracks.len().to_string(), false),
+                            .field("Within the past year", trackcount, false),
                     ),
                 )
                 .await
