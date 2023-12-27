@@ -1,5 +1,7 @@
+#[allow(unused_imports)]
 use clap::{Arg, Command};
 use sqlx::{Executor, PgPool};
+#[allow(unused_imports)]
 use std::env;
 
 pub async fn run(

@@ -28,6 +28,6 @@ lastfm = "0.6.1"
 url = "2.5.0"
 shuttle-runtime = { optional = true, version = "0.34.0" }
 shuttle-secrets = { optional = true, version = "0.34.0" }
-shuttle-serenity = { optional = true, version = "0.34.1", features = ["serenity-0-12-rustls_backend"] }
+shuttle-serenity = { optional = true, version = "0.34.1", default-features = false, features = ["serenity-0-12-rustls_backend"] }
 shuttle-shared-db = { optional = true, version = "0.34.0", features = ["postgres-rustls"] }
 sqlx = { version = "0.7.3", features = ["postgres", "runtime-tokio"] }
