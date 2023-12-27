@@ -9,6 +9,8 @@ pub fn generate_api_key() -> String {
     let mut key_controller = PrefixedApiKeyController::configure()
         .prefix("mljboard".to_owned())
         .seam_defaults()
+        .short_token_length(8)
+        .long_token_length(24)
         .finalize()
         .unwrap();
 

@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
-use mongodb::{options::CreateCollectionOptions, Database};
-use std::thread::park;
+use sqlx::{Executor, PgPool};
+use std::env;
 
 pub async fn run(
     bot_token: String,
@@ -8,44 +8,18 @@ pub async fn run(
     hos_server_port: u16,
     hos_server_passwd: Option<String>,
     hos_server_https: bool,
-    db: Database,
+    pool: PgPool,
     lastfm_api: Option<String>,
 ) -> serenity::client::ClientBuilder {
-    if !(db
-        .list_collection_names(None)
-        .await
-        .unwrap()
-        .contains(&"discord_pairing_codes".to_string()))
-    {
-        log::warn!("Pairing code collection not found in DB. Creating.");
-        db.create_collection(
-            "discord_pairing_codes",
-            CreateCollectionOptions::builder().build(),
-        )
-        .await
-        .expect("Failed to create Discord pairing codes collection");
-    }
+    log::info!("Connecting to database");
 
-    if !(db
-        .list_collection_names(None)
-        .await
-        .unwrap()
-        .contains(&"discord_websites".to_string()))
-    {
-        log::warn!("Website collection not found in DB. Creating.");
-        db.create_collection(
-            "discord_websites",
-            CreateCollectionOptions::builder().build(),
-        )
-        .await
-        .expect("Failed to create Discord websites collection");
-    }
+    pool.execute(include_str!("../schema.sql")).await.unwrap();
 
-    log::info!("Finished checking for collections. Spawning bot thread.");
+    log::info!("Finished checking for tables. Spawning bot thread.");
 
     return mljboard_bot::discord::bot::build_bot(
         bot_token,
-        db,
+        pool,
         hos_server_ip,
         hos_server_port,
         hos_server_passwd,
@@ -95,18 +69,6 @@ pub async fn main() {
                 .help("Enable if your HOS server uses HTTPS. OFF by default."),
         )
         .arg(
-            Arg::new("mongo_location")
-                .short('m')
-                .value_name("MONGO")
-                .help("MongoDB server location. Format: mongodb://user:password@server/path"),
-        )
-        .arg(
-            Arg::new("mongo_db")
-                .short('p')
-                .value_name("MONGO_DB")
-                .help("MongoDB database name"),
-        )
-        .arg(
             Arg::new("lfm_api")
                 .short('l')
                 .value_name("LFM_API")
@@ -133,23 +95,13 @@ pub async fn main() {
 
     let hos_server_https: bool = matches.get_flag("hos-https");
 
-    let mongo_db_creds: String = matches
-        .get_one::<String>("mongo_location")
-        .expect("MongoDB creds required")
-        .to_string();
-
-    let mongo_db: String = matches
-        .get_one::<String>("mongo_db")
-        .expect("MongoDB DB name required")
-        .to_string();
+    let postgres_url: String = env::var("DATABASE_URL").expect("Need a postgres database url");
 
     let lastfm_api: Option<String> = matches.get_one::<String>("lfm_api").map(|x| x.to_string());
 
-    log::info!("Connecting to database");
-
-    let db = mljboard_bot::db::mongo::start_db(mongo_db_creds, mongo_db).await;
-
-    log::info!("Connected to database");
+    let pool = mljboard_bot::db::postgres::start_db(postgres_url)
+        .await
+        .expect("Postgres connection failed");
 
     let client_builder = run(
         bot_token,
@@ -157,7 +109,7 @@ pub async fn main() {
         hos_server_port,
         hos_server_passwd,
         hos_server_https,
-        db,
+        pool,
         lastfm_api,
     )
     .await;
@@ -174,7 +126,7 @@ use shuttle_secrets::SecretStore;
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
-    #[shuttle_shared_db::MongoDb] db: Database,
+    #[shuttle_shared_db::Postgres] pool: PgPool,
 ) -> shuttle_serenity::ShuttleSerenity {
     let bot_token: String = secret_store.get("BOT_TOKEN").unwrap();
     let hos_server_ip: String = secret_store.get("HOS_IP").unwrap();
@@ -193,7 +145,7 @@ async fn serenity(
         hos_server_port,
         hos_server_passwd,
         hos_server_https,
-        db,
+        pool,
         lastfm_api,
     )
     .await;

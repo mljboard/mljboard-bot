@@ -1,12 +1,12 @@
+use crate::db::postgres::{
+    delete_discord_pairing_code, delete_website, get_discord_pairing_code, get_websites,
+    insert_discord_pairing_code, insert_website,
+};
 use crate::hos::*;
 use core::num::NonZeroU16;
-use futures::stream::StreamExt;
 use mljcl::history::numscrobbles_async;
 use mljcl::range::Range;
 use mljcl::MalojaCredentials;
-use mongodb::bson::{doc, Document};
-use mongodb::options::{DeleteOptions, InsertOneOptions};
-use mongodb::{Cursor, Database};
 use serenity::all::CreateMessage;
 use serenity::async_trait;
 use serenity::builder::CreateEmbed;
@@ -15,11 +15,12 @@ use serenity::model::gateway::Ready;
 use serenity::model::prelude::Message;
 use serenity::model::user::User;
 use serenity::prelude::*;
+use sqlx::PgPool;
 use url::{ParseError, Url};
 
 #[derive(Clone, Debug)]
 struct Handler {
-    pub db: Database,
+    pub pool: PgPool,
     pub hos_server_ip: String,
     pub hos_server_port: u16,
     pub hos_server_passwd: Option<String>,
@@ -29,8 +30,7 @@ struct Handler {
 }
 
 fn option_nonzerou16_to_u16(input: Option<NonZeroU16>) -> u16 {
-    // we want to keep the `#0` after the user since any databases created
-    // before this commit will have it
+    // we want to keep the `#0` after the user
     // it can't hurt
     match input {
         Some(output) => output.get(),
@@ -77,22 +77,13 @@ macro_rules! dm_channel {
 impl Handler {
     pub async fn handle_hos_user(
         &self,
-        pairing_code_cursor: &mut Cursor<Document>,
         formatted_user: String,
         ctx: Context,
         msg: Message,
     ) -> Option<MalojaCredentials> {
         let mut assigned_pairing_code: Option<String> = None;
-        while let Some(pair) = pairing_code_cursor.next().await {
-            if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
-                assigned_pairing_code = Some(
-                    pair.clone()
-                        .unwrap()
-                        .get_str("pairing_code")
-                        .unwrap()
-                        .to_string(),
-                );
-            }
+        for result in get_discord_pairing_code(&self.pool, formatted_user).await {
+            assigned_pairing_code = result.pairing_code;
         }
         match assigned_pairing_code {
             Some(pairing_code) => {
@@ -155,22 +146,14 @@ impl Handler {
 
     pub async fn handle_website_user(
         &self,
-        website_cursor: &mut Cursor<Document>,
         formatted_user: String,
         _ctx: Context,
         _msg: Message,
     ) -> Result<MalojaCredentials, Option<ParseError>> {
         let mut assigned_website: Option<String> = None;
-        while let Some(pair) = website_cursor.next().await {
-            if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
-                assigned_website = Some(
-                    pair.clone()
-                        .unwrap()
-                        .get_str("website")
-                        .unwrap()
-                        .to_string(),
-                );
-            }
+
+        for result in get_websites(&self.pool, formatted_user).await {
+            assigned_website = result.website;
         }
         match assigned_website {
             Some(website) => {
@@ -205,28 +188,16 @@ impl Handler {
 
     pub async fn handle_creds(
         &self,
-        pairing_code_cursor: &mut Cursor<Document>,
-        website_cursor: &mut Cursor<Document>,
         formatted_user: String,
         ctx: Context,
         msg: Message,
     ) -> Option<MalojaCredentials> {
         let creds = self
-            .handle_website_user(
-                website_cursor,
-                formatted_user.clone(),
-                ctx.clone(),
-                msg.clone(),
-            )
+            .handle_website_user(formatted_user.clone(), ctx.clone(), msg.clone())
             .await;
         if creds.is_err() {
-            self.handle_hos_user(
-                pairing_code_cursor,
-                formatted_user,
-                ctx.clone(),
-                msg.clone(),
-            )
-            .await
+            self.handle_hos_user(formatted_user, ctx.clone(), msg.clone())
+                .await
         } else {
             Some(creds.unwrap())
         }
@@ -243,35 +214,21 @@ pub fn get_arg(content: String) -> String {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         let formatted_user = format_user(msg.author.clone());
-        let pairing_codes = self.db.collection::<Document>("discord_pairing_codes");
-        let websites = self.db.collection::<Document>("discord_websites");
-        let mut pairing_code_cursor = pairing_codes
-            .find(doc! {}, mongodb::options::FindOptions::builder().build())
-            .await
-            .unwrap();
-        let mut website_cursor = websites
-            .find(doc! {}, mongodb::options::FindOptions::builder().build())
-            .await
-            .unwrap();
 
         if msg.content == "!hos_setup" {
             if let Some(dm_channel) = dm_channel!(msg, ctx) {
                 let mut match_found = false;
-                while let Some(pair) = pairing_code_cursor.next().await {
-                    if pair.unwrap().get_str("user").unwrap() == formatted_user.clone() {
-                        match_found = true;
-                    }
+
+                let query = get_discord_pairing_code(&self.pool, formatted_user.clone()).await;
+
+                if query.len() >= 1 {
+                    match_found = true;
                 }
+
                 if !match_found {
                     let key = crate::generate_api_key();
                     //TODO: check unique
-                    pairing_codes
-                        .insert_one(
-                            doc! {"user": formatted_user.clone(), "pairing_code": key.clone()},
-                            InsertOneOptions::builder().build(),
-                        )
-                        .await
-                        .unwrap();
+                    insert_discord_pairing_code(&self.pool, formatted_user, key.clone()).await;
                     dm_channel.send_message(ctx,
                             CreateMessage::new().content(format!("You have been assigned the pairing code `{}`. Make sure to pass this to your HOS client.", key))
                         ).await.unwrap();
@@ -289,11 +246,12 @@ impl EventHandler for Handler {
         } else if msg.content.starts_with("!website_setup") {
             let arg = get_arg(msg.clone().content);
             let mut match_found = false;
-            while let Some(pair) = website_cursor.next().await {
-                if pair.unwrap().get_str("user").unwrap() == formatted_user.clone() {
-                    match_found = true;
-                }
+
+            let query = get_websites(&self.pool, formatted_user.clone()).await;
+            if query.len() >= 1 {
+                match_found = true;
             }
+
             if match_found {
                 msg.reply_ping(
                     ctx.clone(),
@@ -311,78 +269,86 @@ impl EventHandler for Handler {
                 msg.reply_ping(ctx.clone(), format!("Setting your website to {}.", arg))
                     .await
                     .unwrap();
-                websites
-                    .insert_one(
-                        doc! {"user": formatted_user.clone(), "website": arg.clone()},
-                        InsertOneOptions::builder().build(),
-                    )
-                    .await
-                    .unwrap();
+
+                insert_website(&self.pool, formatted_user, arg.clone()).await;
             } else {
                 msg.reply_ping(ctx, "No website provided.").await.unwrap();
             }
         } else if msg.content == "!reset" {
             if let Some(dm_channel) = dm_channel!(msg, ctx) {
-                while let Some(pair) = website_cursor.next().await {
-                    if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
+                for row in get_websites(&self.pool, formatted_user.clone()).await {
+                    if row.discord_username == Some(formatted_user.clone()) {
                         dm_channel
                             .send_message(
                                 ctx.clone(),
                                 CreateMessage::new().content(format!(
                                     "Removing your website `{}` from mljboard's database. \
                             Run `!site_setup` to assign yourself one.",
-                                    pair.clone().unwrap().get_str("website").unwrap_or("[none]")
+                                    row.website.unwrap_or("[none]".to_string())
                                 )),
                             )
                             .await
                             .unwrap();
-                        websites
-                            .delete_one(pair.unwrap(), DeleteOptions::builder().build())
-                            .await
-                            .unwrap();
                     }
                 }
-                while let Some(pair) = pairing_code_cursor.next().await {
-                    if pair.clone().unwrap().get_str("user").unwrap() == formatted_user.clone() {
-                        dm_channel
-                            .send_message(
-                                ctx.clone(),
-                                CreateMessage::new().content(format!(
-                                    "Removing your pairing code `{}` from mljboard's database. \
+
+                let query = delete_website(&self.pool, formatted_user.clone()).await;
+
+                if query >= 1 {
+                    dm_channel
+                        .send_message(
+                            ctx.clone(),
+                            CreateMessage::new().content(format!("Removed {} entries.", query)),
+                        )
+                        .await
+                        .unwrap();
+                }
+
+                let query = get_discord_pairing_code(&self.pool, formatted_user.clone()).await;
+
+                let mut affected: u16 = 0;
+
+                for row in query {
+                    affected += 1;
+                    dm_channel
+                        .send_message(
+                            ctx.clone(),
+                            CreateMessage::new().content(format!(
+                                "Removing your pairing code `{}` from mljboard's database. \
                             Run `!hos_setup` to be issued a new one.",
-                                    pair.clone()
-                                        .unwrap()
-                                        .get_str("pairing_code")
-                                        .unwrap_or("[none]")
-                                )),
-                            )
-                            .await
-                            .unwrap();
-                        pairing_codes
-                            .delete_one(pair.unwrap(), DeleteOptions::builder().build())
-                            .await
-                            .unwrap();
-                        return;
-                    }
+                                row.pairing_code.unwrap_or("[none]".to_string())
+                            )),
+                        )
+                        .await
+                        .unwrap();
                 }
-                dm_channel
-                    .send_message(
-                        ctx.clone(),
-                        CreateMessage::new()
-                            .content("We couldn't find any pairing codes that were yours."),
-                    )
-                    .await
-                    .unwrap();
+
+                let query = delete_discord_pairing_code(&self.pool, formatted_user).await;
+
+                if query >= 1 {
+                    dm_channel
+                        .send_message(
+                            ctx.clone(),
+                            CreateMessage::new().content(format!("Removed {} entries.", query)),
+                        )
+                        .await
+                        .unwrap();
+                }
+
+                if affected == 0 {
+                    dm_channel
+                        .send_message(
+                            ctx.clone(),
+                            CreateMessage::new()
+                                .content("We couldn't find any pairing codes that were yours."),
+                        )
+                        .await
+                        .unwrap();
+                }
             }
         } else if msg.content == "!scrobbles" {
             if let Some(creds) = self
-                .handle_creds(
-                    &mut pairing_code_cursor,
-                    &mut website_cursor,
-                    formatted_user,
-                    ctx.clone(),
-                    msg.clone(),
-                )
+                .handle_creds(formatted_user, ctx.clone(), msg.clone())
                 .await
             {
                 let all_time_scrobbles = numscrobbles_async(
@@ -418,13 +384,7 @@ impl EventHandler for Handler {
             let arg = get_arg(msg.clone().content);
 
             if let Some(creds) = self
-                .handle_creds(
-                    &mut pairing_code_cursor,
-                    &mut website_cursor,
-                    formatted_user,
-                    ctx.clone(),
-                    msg.clone(),
-                )
+                .handle_creds(formatted_user, ctx.clone(), msg.clone())
                 .await
             {
                 let all_time_scrobbles = numscrobbles_async(
@@ -440,7 +400,7 @@ impl EventHandler for Handler {
                         ctx,
                         CreateMessage::new().embed(
                             CreateEmbed::new()
-                                .title(format!("{}'s scrobbles", msg.author.name))
+                                .title(format!("{}'s scrobbles for {}", msg.author.name, arg))
                                 .field("All time", all_time_scrobbles.to_string(), false),
                         ),
                     )
@@ -457,7 +417,7 @@ impl EventHandler for Handler {
 
 pub async fn build_bot(
     token: String,
-    db: Database,
+    pool: PgPool,
     hos_server_ip: String,
     hos_server_port: u16,
     hos_server_passwd: Option<String>,
@@ -469,7 +429,7 @@ pub async fn build_bot(
         | GatewayIntents::MESSAGE_CONTENT;
 
     Client::builder(&token, intents).event_handler(Handler {
-        db,
+        pool,
         hos_server_ip,
         hos_server_port,
         hos_server_passwd,

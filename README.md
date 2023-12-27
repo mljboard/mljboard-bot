@@ -14,5 +14,5 @@ Create a `Secrets.toml` following the example in `Secrets.toml.example`. Keep in
 
 - A Discord bot token. `-d <DISCORD BOT TOKEN>`
 - A [HOS server](https://github.com/duckfromdiscord/hos-rv) and its password. `-j <IP> -k <PORT> -s <PASSWD>` and supply `--hos-https` if it's secure (recommended).
-- A MongoDB database. `-m mongodb://x:x@x/x`. `mljboard-bot` should create any missing collections on its own.
+- A PostgreSQL database in your `DATABASE_URL` env variable. `postgres://user:pass@127.0.0.1:5432/mljboard`. `mljboard-bot` should create any missing tables on its own. Not needed when using with Shuttle of course.
 - A Last.FM API key. `-l <API>`
