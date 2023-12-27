@@ -19,7 +19,7 @@ pub async fn run(
 
     log::info!("Finished checking for tables. Spawning bot thread.");
 
-    return mljboard_bot::discord::bot::build_bot(
+    mljboard_bot::discord::bot::build_bot(
         bot_token,
         pool,
         hos_server_ip,
@@ -28,7 +28,7 @@ pub async fn run(
         hos_server_https,
         lastfm_api,
     )
-    .await;
+    .await
 }
 
 #[cfg(not(feature = "shuttle"))]

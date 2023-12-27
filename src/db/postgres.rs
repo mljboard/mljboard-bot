@@ -21,7 +21,7 @@ pub async fn get_websites(pool: &PgPool, formatted_user: String) -> Vec<DiscordW
         r#"
         SELECT * FROM discord_websites
         WHERE discord_username = $1
-        "#
+        "#,
     )
     .bind(formatted_user)
     .fetch_all(pool)
@@ -52,7 +52,8 @@ pub async fn insert_website(pool: &PgPool, formatted_user: String, website: Stri
             VALUES ( $1, $2 )
             "#,
     )
-    .bind(formatted_user).bind(website)
+    .bind(formatted_user)
+    .bind(website)
     .execute(pool)
     .await
     .expect("Failed to add website to DB");
@@ -63,9 +64,10 @@ pub async fn insert_discord_pairing_code(pool: &PgPool, formatted_user: String, 
         r#"
         INSERT INTO discord_pairing_codes
         VALUES ( $1, $2 )
-        "#
+        "#,
     )
-    .bind(formatted_user).bind(key)
+    .bind(formatted_user)
+    .bind(key)
     .execute(pool)
     .await
     .expect("Failed to add pairing code to DB");
@@ -76,7 +78,7 @@ pub async fn delete_discord_pairing_code(pool: &PgPool, formatted_user: String) 
         r#"
         DELETE FROM discord_pairing_codes
         WHERE discord_username = $1
-        "#
+        "#,
     )
     .bind(formatted_user)
     .execute(pool)
@@ -90,7 +92,7 @@ pub async fn delete_website(pool: &PgPool, formatted_user: String) -> u64 {
         r#"
         DELETE FROM discord_websites
         WHERE discord_username = $1
-        "#
+        "#,
     )
     .bind(formatted_user)
     .execute(pool)
