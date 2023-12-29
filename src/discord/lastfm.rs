@@ -103,8 +103,9 @@ pub async fn lfmuser_cmd(ctx: Context<'_>, api: Option<String>, arg: String) {
                 None => "[user not found, or cancel occurred]".to_string(),
             };
 
-            ctx.send(
-                CreateReply::default().embed(
+            ctx.channel_id().send_message(
+                ctx,
+                CreateMessage::new().embed(
                     CreateEmbed::new()
                         .title(format!("LastFM user {}'s scrobbles", arg.clone()))
                         .field("Within the past year", trackcount, false),
