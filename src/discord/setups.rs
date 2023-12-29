@@ -1,10 +1,11 @@
+use super::bot::Context;
 use crate::db::postgres::*;
 use crate::dm_channel;
-use serenity::all::{Context, CreateMessage, Message};
+use serenity::all::CreateMessage;
 use sqlx::PgPool;
 
-pub async fn hos_setup(ctx: Context, msg: Message, pool: &PgPool, formatted_user: String) {
-    if let Some(dm_channel) = dm_channel!(msg, ctx) {
+pub async fn hos_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
+    if let Some(dm_channel) = dm_channel!(ctx) {
         let mut match_found = false;
 
         let query = get_discord_pairing_code(pool, formatted_user.clone()).await;
@@ -30,16 +31,14 @@ pub async fn hos_setup(ctx: Context, msg: Message, pool: &PgPool, formatted_user
                     .await
                     .unwrap();
         }
+
+        let _ = ctx.say("DMed you.").await;
+    } else {
+        let _ = ctx.say("Unable to create a DM channel with you.").await;
     }
 }
 
-pub async fn website_setup(
-    ctx: Context,
-    msg: Message,
-    pool: &PgPool,
-    formatted_user: String,
-    arg: String,
-) {
+pub async fn website_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: String, arg: String) {
     let mut match_found = false;
 
     let query = get_websites(pool, formatted_user.clone()).await;
@@ -48,31 +47,29 @@ pub async fn website_setup(
     }
 
     if match_found {
-        msg.reply_ping(
-            ctx.clone(),
-            "You've already set a website. Do `!reset` to remove it.",
-        )
-        .await
-        .unwrap();
+        ctx.say("You've already set a website. Do `!reset` to remove it.")
+            .await
+            .unwrap();
+        return;
     }
     if !arg.is_empty() {
         if !(arg.starts_with("http://") || arg.starts_with("https://")) {
-            msg.reply_ping(ctx.clone(), "Remember that your website has to start with `http://` or `https://`. Try again with \
+            ctx.say("Remember that your website has to start with `http://` or `https://`. Try again with \
                     one of those two, and keep in mind if you're using https you cannot use an invalid certificate.").await.unwrap();
             return;
         }
-        msg.reply_ping(ctx.clone(), format!("Setting your website to {}.", arg))
+        ctx.say(format!("Setting your website to {}.", arg))
             .await
             .unwrap();
 
         insert_website(pool, formatted_user, arg.clone()).await;
     } else {
-        msg.reply_ping(ctx, "No website provided.").await.unwrap();
+        ctx.say("No website provided.").await.unwrap();
     }
 }
 
-pub async fn reset(ctx: Context, msg: Message, pool: &PgPool, formatted_user: String) {
-    if let Some(dm_channel) = dm_channel!(msg, ctx) {
+pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
+    if let Some(dm_channel) = dm_channel!(ctx) {
         for row in get_websites(pool, formatted_user.clone()).await {
             if row.discord_username == Some(formatted_user.clone()) {
                 dm_channel
@@ -142,5 +139,8 @@ pub async fn reset(ctx: Context, msg: Message, pool: &PgPool, formatted_user: St
                 .await
                 .unwrap();
         }
+        let _ = ctx.say("DMed you.").await;
+    } else {
+        let _ = ctx.say("Unable to create a DM channel with you.").await;
     }
 }

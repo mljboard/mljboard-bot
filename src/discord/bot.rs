@@ -2,16 +2,16 @@ use crate::db::postgres::{get_discord_pairing_code, get_websites};
 use crate::hos::*;
 use core::num::NonZeroU16;
 use mljcl::MalojaCredentials;
-use serenity::async_trait;
-use serenity::model::gateway::Ready;
-use serenity::model::prelude::Message;
-use serenity::model::user::User;
-use serenity::prelude::*;
+use poise::serenity_prelude::*;
 use sqlx::PgPool;
+use std::result::Result;
 use url::{ParseError, Url};
 
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Context<'a> = poise::Context<'a, BotData, Error>;
+
 #[derive(Clone, Debug)]
-struct Handler {
+pub struct BotData {
     pub pool: PgPool,
     pub hos_server_ip: String,
     pub hos_server_port: u16,
@@ -38,12 +38,11 @@ pub fn format_user(user: User) -> String {
     )
 }
 
-impl Handler {
+impl BotData {
     pub async fn handle_hos_user(
         &self,
         formatted_user: String,
-        ctx: Context,
-        msg: Message,
+        ctx: Context<'_>,
     ) -> Option<MalojaCredentials> {
         let mut assigned_pairing_code: Option<String> = None;
         for result in get_discord_pairing_code(&self.pool, formatted_user).await {
@@ -71,8 +70,7 @@ impl Handler {
                     }
                 }
                 if sessions_with_pairing_code.is_empty() {
-                    msg.reply_ping(
-                        ctx.clone(),
+                    ctx.say(
                         "You have a HOS pairing code, but no client running with it. \
                     Connect your HOS client.",
                     )
@@ -81,8 +79,7 @@ impl Handler {
                     return None;
                 }
                 if sessions_with_pairing_code.len() > 1 {
-                    msg.reply_ping(ctx.clone(),
-                            "You have a HOS pairing code, but multiple clients are using it! \
+                    ctx.say("You have a HOS pairing code, but multiple clients are using it! \
                             Disconnect every client and reconnect only one, or, alternatively, do `!reset` and try again with one client and a new pairing code.").await.unwrap();
                     return None;
                 }
@@ -97,12 +94,9 @@ impl Handler {
                 Some(creds)
             }
             None => {
-                msg.reply_ping(
-                    ctx.clone(),
-                    "You don't have a HOS pairing code or a website set up.",
-                )
-                .await
-                .unwrap();
+                ctx.say("You don't have a HOS pairing code or a website set up.")
+                    .await
+                    .unwrap();
                 None
             }
         }
@@ -111,8 +105,7 @@ impl Handler {
     pub async fn handle_website_user(
         &self,
         formatted_user: String,
-        _ctx: Context,
-        _msg: Message,
+        _ctx: Context<'_>,
     ) -> Result<MalojaCredentials, Option<ParseError>> {
         let mut assigned_website: Option<String> = None;
 
@@ -153,17 +146,15 @@ impl Handler {
     pub async fn handle_creds(
         &self,
         formatted_user: String,
-        ctx: Context,
-        msg: Message,
+        ctx: Context<'_>,
     ) -> Option<MalojaCredentials> {
         let creds = self
-            .handle_website_user(formatted_user.clone(), ctx.clone(), msg.clone())
+            .handle_website_user(formatted_user.clone(), ctx.clone())
             .await;
         if let Ok(creds) = creds {
             Some(creds)
         } else {
-            self.handle_hos_user(formatted_user, ctx.clone(), msg.clone())
-                .await
+            self.handle_hos_user(formatted_user, ctx.clone()).await
         }
     }
 }
@@ -174,71 +165,62 @@ pub fn get_arg(content: String) -> String {
     args.join(" ")
 }
 
-#[async_trait]
-impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
-        let formatted_user = format_user(msg.author.clone());
-
-        if msg.content == "!hos_setup" {
-            super::setups::hos_setup(ctx.clone(), msg.clone(), &self.pool, formatted_user).await;
-        } else if msg.content.starts_with("!website_setup") {
-            let arg = get_arg(msg.clone().content);
-            super::setups::website_setup(ctx.clone(), msg.clone(), &self.pool, formatted_user, arg)
-                .await;
-        } else if msg.content == "!reset" {
-            super::setups::reset(ctx.clone(), msg.clone(), &self.pool, formatted_user).await;
-        } else if msg.content == "!scrobbles" {
-            let creds = self
-                .handle_creds(formatted_user, ctx.clone(), msg.clone())
-                .await;
-
-            super::ops::scrobbles_cmd(msg.clone(), self.reqwest_client.clone(), creds, ctx.clone())
-                .await;
-        } else if msg.content.starts_with("!artistscrobbles") {
-            let arg = get_arg(msg.clone().content);
-            let creds = self
-                .handle_creds(formatted_user, ctx.clone(), msg.clone())
-                .await;
-
-            super::ops::artistscrobbles_cmd(
-                msg.clone(),
-                self.reqwest_client.clone(),
-                creds,
-                ctx.clone(),
-                arg,
-            )
-            .await;
-        } else if msg.content.starts_with("!lfmuser") {
-            let arg = get_arg(msg.clone().content);
-            super::lastfm::lfmuser_cmd(ctx.clone(), msg, self.lastfm_api.clone(), arg).await;
-        }
-    }
-
-    async fn ready(&self, _: Context, ready: Ready) {
-        log::info!("{} is connected!", format_user(ready.user.into()));
-    }
+#[poise::command(slash_command)]
+pub async fn hos_setup(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    super::setups::hos_setup(ctx.clone(), &ctx.data().pool, formatted_user).await;
+    Ok(())
 }
 
-pub async fn build_bot(
-    token: String,
-    pool: PgPool,
-    hos_server_ip: String,
-    hos_server_port: u16,
-    hos_server_passwd: Option<String>,
-    hos_server_https: bool,
-    lastfm_api: Option<String>,
-) -> serenity::client::ClientBuilder {
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+#[poise::command(slash_command)]
+pub async fn website_setup(
+    ctx: poise::Context<'_, BotData, Error>,
+    #[description = "Website URL"] website: String,
+) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    super::setups::website_setup(ctx.clone(), &ctx.data().pool, formatted_user, website).await;
+    Ok(())
+}
 
-    Client::builder(token, intents).event_handler(Handler {
-        pool,
-        hos_server_ip,
-        hos_server_port,
-        hos_server_passwd,
-        hos_server_https,
-        reqwest_client: reqwest::Client::builder().build().unwrap(),
-        lastfm_api,
-    })
+#[poise::command(slash_command)]
+pub async fn reset(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    super::setups::reset(ctx.clone(), &ctx.data().pool, formatted_user).await;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
+pub async fn scrobbles(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    let creds = ctx.data().handle_creds(formatted_user, ctx.clone()).await;
+    super::ops::scrobbles_cmd(ctx.data().reqwest_client.clone(), creds, None, ctx.clone()).await;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
+pub async fn artistscrobbles(
+    ctx: poise::Context<'_, BotData, Error>,
+    #[description = "Artist"] artist: String,
+) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    let creds = ctx.data().handle_creds(formatted_user, ctx.clone()).await;
+
+    super::ops::artistscrobbles_cmd(
+        ctx.data().reqwest_client.clone(),
+        creds,
+        None,
+        ctx.clone(),
+        artist,
+    )
+    .await;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
+pub async fn lfmuser(
+    ctx: poise::Context<'_, BotData, Error>,
+    #[description = "User"] user: String,
+) -> Result<(), Error> {
+    super::lastfm::lfmuser_cmd(ctx.clone(), ctx.data().lastfm_api.clone(), user).await;
+    Ok(())
 }

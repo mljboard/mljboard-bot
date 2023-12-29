@@ -1,5 +1,7 @@
 #[allow(unused_imports)]
 use clap::{Arg, Command};
+use mljboard_bot::discord::bot::*;
+use poise::serenity_prelude::*;
 use sqlx::{Executor, PgPool};
 #[allow(unused_imports)]
 use std::env;
@@ -12,23 +14,47 @@ pub async fn run(
     hos_server_https: bool,
     pool: PgPool,
     lastfm_api: Option<String>,
-) -> serenity::client::ClientBuilder {
+) -> poise::serenity_prelude::client::ClientBuilder {
     log::info!("Connecting to database");
 
     pool.execute(include_str!("../schema.sql")).await.unwrap();
 
     log::info!("Finished checking for tables. Spawning bot thread.");
 
-    mljboard_bot::discord::bot::build_bot(
-        bot_token,
-        pool,
-        hos_server_ip,
-        hos_server_port,
-        hos_server_passwd,
-        hos_server_https,
-        lastfm_api,
-    )
-    .await
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![
+                hos_setup(),
+                website_setup(),
+                reset(),
+                scrobbles(),
+                artistscrobbles(),
+                lfmuser(),
+            ],
+            ..Default::default()
+        })
+        .setup(move |ctx, ready, framework| {
+            Box::pin(async move {
+                log::info!("{} is connected!", format_user(ready.user.clone().into()));
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(BotData {
+                    pool,
+                    hos_server_ip,
+                    hos_server_port,
+                    hos_server_passwd,
+                    hos_server_https,
+                    reqwest_client: reqwest::Client::builder().build().unwrap(),
+                    lastfm_api,
+                })
+            })
+        })
+        .build();
+
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
+
+    serenity::client::ClientBuilder::new(bot_token, intents).framework(framework)
 }
 
 #[cfg(not(feature = "shuttle"))]

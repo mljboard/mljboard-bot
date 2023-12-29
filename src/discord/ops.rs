@@ -1,13 +1,15 @@
+use super::bot::Context;
 use mljcl::history::numscrobbles_async;
 use mljcl::{range::Range, MalojaCredentials};
+use poise::CreateReply;
 use reqwest::Client;
-use serenity::all::{Context, CreateEmbed, CreateMessage, Message};
+use serenity::all::{CreateEmbed, CreateMessage, Message};
 
 pub async fn artistscrobbles_cmd(
-    msg: Message,
     client: Client,
     creds: Option<MalojaCredentials>,
-    ctx: Context,
+    msg: Option<Message>,
+    ctx: Context<'_>,
     arg: String,
 ) {
     if let Some(creds) = creds {
@@ -19,25 +21,28 @@ pub async fn artistscrobbles_cmd(
         )
         .await
         .unwrap();
-        msg.channel_id
-            .send_message(
-                ctx,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title(format!("{}'s scrobbles for {}", msg.author.name, arg))
-                        .field("All time", all_time_scrobbles.to_string(), false),
-                ),
-            )
-            .await
-            .unwrap();
+        let embed = CreateEmbed::new()
+            .title(format!("{}'s scrobbles for {}", ctx.author().name, arg))
+            .field("All time", all_time_scrobbles.to_string(), false);
+        match msg {
+            Some(msg) => {
+                msg.channel_id
+                    .send_message(ctx, CreateMessage::new().embed(embed))
+                    .await
+                    .unwrap();
+            }
+            None => {
+                ctx.send(CreateReply::default().embed(embed)).await.unwrap();
+            }
+        }
     }
 }
 
 pub async fn scrobbles_cmd(
-    msg: Message,
     client: Client,
     creds: Option<MalojaCredentials>,
-    ctx: Context,
+    msg: Option<Message>,
+    ctx: Context<'_>,
 ) {
     if let Some(creds) = creds {
         let all_time_scrobbles =
@@ -52,17 +57,20 @@ pub async fn scrobbles_cmd(
         )
         .await
         .unwrap();
-        msg.channel_id
-            .send_message(
-                ctx,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title(format!("{}'s scrobbles", msg.author.name))
-                        .field("All time", all_time_scrobbles.to_string(), false)
-                        .field("This year", this_year_scrobbles.to_string(), false),
-                ),
-            )
-            .await
-            .unwrap();
+        let embed = CreateEmbed::new()
+            .title(format!("{}'s scrobbles", ctx.author().name))
+            .field("All time", all_time_scrobbles.to_string(), false)
+            .field("This year", this_year_scrobbles.to_string(), false);
+        match msg {
+            Some(msg) => {
+                msg.channel_id
+                    .send_message(ctx, CreateMessage::new().embed(embed))
+                    .await
+                    .unwrap();
+            }
+            None => {
+                ctx.send(CreateReply::default().embed(embed)).await.unwrap();
+            }
+        }
     };
 }
