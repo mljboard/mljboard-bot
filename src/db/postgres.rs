@@ -16,6 +16,12 @@ pub struct DiscordPairingCodeUser {
     pub pairing_code: Option<String>,
 }
 
+#[derive(sqlx::FromRow)]
+pub struct DiscordLastFMUser {
+    pub discord_username: Option<String>,
+    pub lastfm_username: Option<String>,
+}
+
 pub async fn get_websites(pool: &PgPool, formatted_user: String) -> Vec<DiscordWebsiteUser> {
     sqlx::query_as::<_, DiscordWebsiteUser>(
         r#"
@@ -43,6 +49,23 @@ pub async fn get_discord_pairing_code(
     .fetch_all(pool)
     .await
     .expect("Failed to query DB for pairing codes")
+}
+
+
+pub async fn get_lastfm_username(
+    pool: &PgPool,
+    formatted_user: String,
+) -> Vec<DiscordLastFMUser> {
+    sqlx::query_as::<_, DiscordLastFMUser>(
+        r#"
+        SELECT * FROM lastfm_usernames
+        WHERE discord_username = $1
+        "#,
+    )
+    .bind(formatted_user)
+    .fetch_all(pool)
+    .await
+    .expect("Failed to query DB for Last.FM username")
 }
 
 pub async fn insert_website(pool: &PgPool, formatted_user: String, website: String) {
@@ -73,6 +96,20 @@ pub async fn insert_discord_pairing_code(pool: &PgPool, formatted_user: String, 
     .expect("Failed to add pairing code to DB");
 }
 
+pub async fn insert_lastfm_user(pool: &PgPool, formatted_user: String, username: String) {
+    let _ = sqlx::query(
+        r#"
+        INSERT INTO lastfm_usernames
+        VALUES ( $1, $2 )
+        "#,
+    )
+    .bind(formatted_user)
+    .bind(username)
+    .execute(pool)
+    .await
+    .expect("Failed to add Last.FM user to DB");
+}
+
 pub async fn delete_discord_pairing_code(pool: &PgPool, formatted_user: String) -> u64 {
     sqlx::query(
         r#"
@@ -98,5 +135,20 @@ pub async fn delete_website(pool: &PgPool, formatted_user: String) -> u64 {
     .execute(pool)
     .await
     .expect("Failed to delete website")
+    .rows_affected()
+}
+
+
+pub async fn delete_lastfm_user(pool: &PgPool, formatted_user: String) -> u64 {
+    sqlx::query(
+        r#"
+        DELETE FROM lastfm_usernames
+        WHERE discord_username = $1
+        "#,
+    )
+    .bind(formatted_user)
+    .execute(pool)
+    .await
+    .expect("Failed to delete Last.FM user")
     .rows_affected()
 }

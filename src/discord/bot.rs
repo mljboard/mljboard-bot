@@ -183,6 +183,16 @@ pub async fn website_setup(
 }
 
 #[poise::command(slash_command)]
+pub async fn lfm_setup(
+    ctx: poise::Context<'_, BotData, Error>,
+    #[description = "Last.FM username"] username: String,
+) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    super::setups::lfm_setup(ctx.clone(), &ctx.data().pool, formatted_user, username).await;
+    Ok(())
+}
+
+#[poise::command(slash_command)]
 pub async fn reset(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
     super::setups::reset(ctx.clone(), &ctx.data().pool, formatted_user).await;

@@ -62,10 +62,46 @@ pub async fn website_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: Stri
             .await
             .unwrap();
 
-        insert_website(pool, formatted_user, arg.clone()).await;
+        insert_website(pool, formatted_user, arg).await;
     } else {
         ctx.say("No website provided.").await.unwrap();
     }
+}
+
+pub async fn lfm_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: String, arg: String) {
+    let mut match_found = false;
+
+    let query: Vec<DiscordLastFMUser> = get_lastfm_username(pool, formatted_user.clone()).await;
+    if !query.is_empty() {
+        match_found = true;
+    }
+
+    if match_found {
+        ctx.say("You've already set a Last.FM username. Do `!reset` to remove it.")
+            .await
+            .unwrap();
+        return;
+    }
+
+
+    if !arg.is_empty() {
+        if arg.len() >= 50 {
+            ctx.say("Your Last.FM username is way too long.").await.unwrap(); // as far as I know, the limit is 15 characters
+            return;
+        }
+        if !arg.chars().all(char::is_alphanumeric) {
+            ctx.say("Your provided Last.FM username is invalid.").await.unwrap();
+            return;
+        }
+        ctx.say(format!("Setting your Last.FM username to {}.", arg))
+            .await
+            .unwrap();
+
+        insert_lastfm_user(pool, formatted_user, arg).await;
+    } else {
+        ctx.say("No website provided.").await.unwrap();
+    }
+
 }
 
 pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
@@ -117,7 +153,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
                 .unwrap();
         }
 
-        let query = delete_discord_pairing_code(pool, formatted_user).await;
+        let query = delete_discord_pairing_code(pool, formatted_user.clone()).await;
 
         if query >= 1 {
             dm_channel
@@ -139,6 +175,36 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
                 .await
                 .unwrap();
         }
+
+
+        let query = get_lastfm_username(pool, formatted_user.clone()).await;
+
+        for row in query {
+            affected += 1;
+            dm_channel
+                .send_message(
+                    ctx.clone(),
+                    CreateMessage::new().content(format!(
+                        "Removing your Last.FM username `{}` from mljboard's database.",
+                        row.lastfm_username.unwrap_or("[none]".to_string())
+                    )),
+                )
+                .await
+                .unwrap();
+        }
+
+        let query = delete_lastfm_user(pool, formatted_user.clone()).await;
+
+        if query >= 1 {
+            dm_channel
+                .send_message(
+                    ctx.clone(),
+                    CreateMessage::new().content(format!("Removed {} entries.", query)),
+                )
+                .await
+                .unwrap();
+        }
+
         let _ = ctx.say("DMed you.").await;
     } else {
         let _ = ctx.say("Unable to create a DM channel with you.").await;

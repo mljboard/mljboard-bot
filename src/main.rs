@@ -26,6 +26,7 @@ pub async fn run(
             commands: vec![
                 hos_setup(),
                 website_setup(),
+                lfm_setup(),
                 reset(),
                 scrobbles(),
                 artistscrobbles(),
