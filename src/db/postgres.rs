@@ -51,11 +51,7 @@ pub async fn get_discord_pairing_code(
     .expect("Failed to query DB for pairing codes")
 }
 
-
-pub async fn get_lastfm_username(
-    pool: &PgPool,
-    formatted_user: String,
-) -> Vec<DiscordLastFMUser> {
+pub async fn get_lastfm_username(pool: &PgPool, formatted_user: String) -> Vec<DiscordLastFMUser> {
     sqlx::query_as::<_, DiscordLastFMUser>(
         r#"
         SELECT * FROM lastfm_usernames
@@ -137,7 +133,6 @@ pub async fn delete_website(pool: &PgPool, formatted_user: String) -> u64 {
     .expect("Failed to delete website")
     .rows_affected()
 }
-
 
 pub async fn delete_lastfm_user(pool: &PgPool, formatted_user: String) -> u64 {
     sqlx::query(

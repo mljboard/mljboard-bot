@@ -9,18 +9,38 @@ use std::{future::IntoFuture, time::SystemTime};
 
 const LOADING_GIF: &str = "https://media1.tenor.com/m/mRbYKHgYCOIAAAAC/loading-gif-loading.gif";
 
+#[derive(Clone, Debug)]
+pub struct LastFMUser {
+    pub username: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct LfmRange {
+    start: Option<i64>,
+    end: Option<i64>,
+}
+
+impl LfmRange {
+    pub fn new(start: Option<i64>, end: Option<i64>) -> Self {
+        LfmRange { start, end }
+    }
+    pub fn available(&self) -> bool {
+        !(self.start.is_none() && self.end.is_none())
+    }
+}
+
 pub fn get_loading_message(username: String, loaded: Option<usize>) -> CreateReply {
     let text = format!(
         "Working on scrobbles for LastFM user {}... ({} loaded)",
         username.clone(),
         loaded.unwrap_or(0)
     );
-    return CreateReply::default()
+    CreateReply::default()
         .embed(CreateEmbed::new().title(text).image(LOADING_GIF))
         .components(vec![CreateActionRow::Buttons(vec![CreateButton::new(
             "cancel",
         )
-        .label("Cancel")])]);
+        .label("Cancel")])])
 }
 
 pub async fn get_streams(
@@ -38,7 +58,7 @@ pub async fn get_streams(
             if tracks.len() % 1000 == 0 {
                 message
                     .edit(
-                        ctx.clone(),
+                        ctx,
                         get_loading_message(username.clone(), Some(tracks.len())),
                     )
                     .await
@@ -55,8 +75,7 @@ pub async fn get_lastfm_user(
     ctx: Context<'_>,
     api: String,
     username: String,
-    from: Option<i64>,
-    to: Option<i64>,
+    lfm_range: LfmRange,
 ) -> Option<Vec<RecordedTrack>> {
     // TODO: caching will skip this step or parts of it *if available*
     let message = ctx
@@ -66,7 +85,7 @@ pub async fn get_lastfm_user(
 
     let user = get_lastfm_client(username.clone(), api.clone()).await;
 
-    let recent_tracks = user.recent_tracks(from, to).await;
+    let recent_tracks = user.recent_tracks(lfm_range.start, lfm_range.end).await;
     let ret: Option<Vec<RecordedTrack>>;
     tokio::select! {
         stream_vec = get_streams(recent_tracks, message.clone(), ctx, username) => {
@@ -82,7 +101,7 @@ pub async fn get_lastfm_user(
 
     // we don't unwrap here just in case the bot isn't able to delete its own messages
     // this is unlikely but there's no reason to crash the entire command for that
-    let _ = message.delete(ctx.clone()).await;
+    let _ = message.delete(ctx).await;
 
     ret
 }
@@ -95,24 +114,30 @@ pub async fn lfmuser_cmd(ctx: Context<'_>, api: Option<String>, arg: String) {
                 .map(|x| x.as_secs() as i64)
                 .ok();
             let one_year_ago = now_secs.map(|x| x - 31_536_000);
-            let tracks =
-                get_lastfm_user(ctx.clone(), lastfm_api, arg.clone(), one_year_ago, now_secs).await;
+            let tracks = get_lastfm_user(
+                ctx,
+                lastfm_api,
+                arg.clone(),
+                LfmRange::new(one_year_ago, now_secs),
+            )
+            .await;
 
             let trackcount = match tracks {
                 Some(tracks) => tracks.len().to_string(),
                 None => "[user not found, or cancel occurred]".to_string(),
             };
 
-            ctx.channel_id().send_message(
-                ctx,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title(format!("LastFM user {}'s scrobbles", arg.clone()))
-                        .field("Within the past year", trackcount, false),
-                ),
-            )
-            .await
-            .unwrap();
+            ctx.channel_id()
+                .send_message(
+                    ctx,
+                    CreateMessage::new().embed(
+                        CreateEmbed::new()
+                            .title(format!("LastFM user {}'s scrobbles", arg.clone()))
+                            .field("Within the past year", trackcount, false),
+                    ),
+                )
+                .await
+                .unwrap();
         }
         None => {
             ctx.say("The bot owner has not set up a Last.FM API key.")

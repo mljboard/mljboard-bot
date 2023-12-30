@@ -83,14 +83,17 @@ pub async fn lfm_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: String, 
         return;
     }
 
-
     if !arg.is_empty() {
         if arg.len() >= 50 {
-            ctx.say("Your Last.FM username is way too long.").await.unwrap(); // as far as I know, the limit is 15 characters
+            ctx.say("Your Last.FM username is way too long.")
+                .await
+                .unwrap(); // as far as I know, the limit is 15 characters
             return;
         }
         if !arg.chars().all(char::is_alphanumeric) {
-            ctx.say("Your provided Last.FM username is invalid.").await.unwrap();
+            ctx.say("Your provided Last.FM username is invalid.")
+                .await
+                .unwrap();
             return;
         }
         ctx.say(format!("Setting your Last.FM username to {}.", arg))
@@ -101,7 +104,6 @@ pub async fn lfm_setup(ctx: Context<'_>, pool: &PgPool, formatted_user: String, 
     } else {
         ctx.say("No website provided.").await.unwrap();
     }
-
 }
 
 pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
@@ -110,7 +112,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
             if row.discord_username == Some(formatted_user.clone()) {
                 dm_channel
                     .send_message(
-                        ctx.clone(),
+                        ctx,
                         CreateMessage::new().content(format!(
                             "Removing your website `{}` from mljboard's database. \
                     Run `!site_setup` to assign yourself one.",
@@ -127,7 +129,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
         if query >= 1 {
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new().content(format!("Removed {} entries.", query)),
                 )
                 .await
@@ -142,7 +144,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
             affected += 1;
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new().content(format!(
                         "Removing your pairing code `{}` from mljboard's database. \
                     Run `!hos_setup` to be issued a new one.",
@@ -158,7 +160,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
         if query >= 1 {
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new().content(format!("Removed {} entries.", query)),
                 )
                 .await
@@ -168,7 +170,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
         if affected == 0 {
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new()
                         .content("We couldn't find any pairing codes that were yours."),
                 )
@@ -176,14 +178,13 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
                 .unwrap();
         }
 
-
         let query = get_lastfm_username(pool, formatted_user.clone()).await;
 
         for row in query {
             affected += 1;
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new().content(format!(
                         "Removing your Last.FM username `{}` from mljboard's database.",
                         row.lastfm_username.unwrap_or("[none]".to_string())
@@ -198,7 +199,7 @@ pub async fn reset(ctx: Context<'_>, pool: &PgPool, formatted_user: String) {
         if query >= 1 {
             dm_channel
                 .send_message(
-                    ctx.clone(),
+                    ctx,
                     CreateMessage::new().content(format!("Removed {} entries.", query)),
                 )
                 .await

@@ -1,4 +1,4 @@
-use crate::db::postgres::{get_discord_pairing_code, get_websites};
+use crate::db::postgres::{get_discord_pairing_code, get_lastfm_username, get_websites};
 use crate::hos::*;
 use core::num::NonZeroU16;
 use mljcl::MalojaCredentials;
@@ -6,6 +6,8 @@ use poise::serenity_prelude::*;
 use sqlx::PgPool;
 use std::result::Result;
 use url::{ParseError, Url};
+
+use super::lastfm::LastFMUser;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, BotData, Error>;
@@ -19,6 +21,12 @@ pub struct BotData {
     pub hos_server_https: bool,
     pub reqwest_client: reqwest::Client,
     pub lastfm_api: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum MljboardUser {
+    MalojaUser(MalojaCredentials),
+    LastFMUser(LastFMUser),
 }
 
 fn option_nonzerou16_to_u16(input: Option<NonZeroU16>) -> u16 {
@@ -93,12 +101,7 @@ impl BotData {
                 );
                 Some(creds)
             }
-            None => {
-                ctx.say("You don't have a HOS pairing code or a website set up.")
-                    .await
-                    .unwrap();
-                None
-            }
+            None => None,
         }
     }
 
@@ -143,18 +146,45 @@ impl BotData {
         }
     }
 
+    pub async fn handle_lfm_user(
+        &self,
+        formatted_user: String,
+        _ctx: Context<'_>,
+    ) -> Option<LastFMUser> {
+        let mut assigned_username: Option<String> = None;
+
+        for result in get_lastfm_username(&self.pool, formatted_user).await {
+            assigned_username = result.lastfm_username;
+        }
+
+        if let Some(username) = assigned_username {
+            return Some(LastFMUser { username });
+        }
+
+        None
+    }
+
     pub async fn handle_creds(
         &self,
         formatted_user: String,
         ctx: Context<'_>,
-    ) -> Option<MalojaCredentials> {
-        let creds = self
-            .handle_website_user(formatted_user.clone(), ctx.clone())
-            .await;
+    ) -> Option<MljboardUser> {
+        // prioritize website, then HOS, then Last.FM. website probably responds fastest so it comes first
+        let creds = self.handle_website_user(formatted_user.clone(), ctx).await;
         if let Ok(creds) = creds {
-            Some(creds)
+            Some(MljboardUser::MalojaUser(creds))
         } else {
-            self.handle_hos_user(formatted_user, ctx.clone()).await
+            match self
+                .handle_hos_user(formatted_user.clone(), ctx)
+                .await
+                .map(MljboardUser::MalojaUser)
+            {
+                Some(hos_user) => Some(hos_user),
+                None => self
+                    .handle_lfm_user(formatted_user, ctx)
+                    .await
+                    .map(MljboardUser::LastFMUser),
+            }
         }
     }
 }
@@ -168,7 +198,7 @@ pub fn get_arg(content: String) -> String {
 #[poise::command(slash_command)]
 pub async fn hos_setup(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    super::setups::hos_setup(ctx.clone(), &ctx.data().pool, formatted_user).await;
+    super::setups::hos_setup(ctx, &ctx.data().pool, formatted_user).await;
     Ok(())
 }
 
@@ -178,7 +208,7 @@ pub async fn website_setup(
     #[description = "Website URL"] website: String,
 ) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    super::setups::website_setup(ctx.clone(), &ctx.data().pool, formatted_user, website).await;
+    super::setups::website_setup(ctx, &ctx.data().pool, formatted_user, website).await;
     Ok(())
 }
 
@@ -188,22 +218,30 @@ pub async fn lfm_setup(
     #[description = "Last.FM username"] username: String,
 ) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    super::setups::lfm_setup(ctx.clone(), &ctx.data().pool, formatted_user, username).await;
+    super::setups::lfm_setup(ctx, &ctx.data().pool, formatted_user, username).await;
     Ok(())
 }
 
 #[poise::command(slash_command)]
 pub async fn reset(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    super::setups::reset(ctx.clone(), &ctx.data().pool, formatted_user).await;
+    super::setups::reset(ctx, &ctx.data().pool, formatted_user).await;
     Ok(())
 }
 
 #[poise::command(slash_command)]
 pub async fn scrobbles(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    let creds = ctx.data().handle_creds(formatted_user, ctx.clone()).await;
-    super::ops::scrobbles_cmd(ctx.data().reqwest_client.clone(), creds, None, ctx.clone()).await;
+    let user = ctx.data().handle_creds(formatted_user, ctx).await;
+
+    if user.is_none() {
+        ctx.say("You don't have a HOS pairing code or a website set up.")
+            .await
+            .unwrap();
+        return Ok(());
+    }
+
+    super::ops::scrobbles_cmd(ctx.data().reqwest_client.clone(), user, None, ctx).await;
     Ok(())
 }
 
@@ -213,16 +251,17 @@ pub async fn artistscrobbles(
     #[description = "Artist"] artist: String,
 ) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
-    let creds = ctx.data().handle_creds(formatted_user, ctx.clone()).await;
+    let user = ctx.data().handle_creds(formatted_user, ctx).await;
 
-    super::ops::artistscrobbles_cmd(
-        ctx.data().reqwest_client.clone(),
-        creds,
-        None,
-        ctx.clone(),
-        artist,
-    )
-    .await;
+    if user.is_none() {
+        ctx.say("You don't have a HOS pairing code or a website set up.")
+            .await
+            .unwrap();
+        return Ok(());
+    }
+
+    super::ops::artistscrobbles_cmd(ctx.data().reqwest_client.clone(), user, None, ctx, artist)
+        .await;
     Ok(())
 }
 
@@ -231,6 +270,6 @@ pub async fn lfmuser(
     ctx: poise::Context<'_, BotData, Error>,
     #[description = "User"] user: String,
 ) -> Result<(), Error> {
-    super::lastfm::lfmuser_cmd(ctx.clone(), ctx.data().lastfm_api.clone(), user).await;
+    super::lastfm::lfmuser_cmd(ctx, ctx.data().lastfm_api.clone(), user).await;
     Ok(())
 }
