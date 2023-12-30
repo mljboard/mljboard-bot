@@ -1,8 +1,8 @@
 use super::bot::{Context, MljboardUser};
 use crate::discord::lastfm::get_lastfm_user;
 use crate::discord::lastfm::LfmRange;
-use mljcl::range::Range as MljRange;
 use mljcl::history::numscrobbles_async;
+use mljcl::range::Range as MljRange;
 use poise::CreateReply;
 use reqwest::Client;
 use serenity::all::{CreateEmbed, CreateMessage, Message};

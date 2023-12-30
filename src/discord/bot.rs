@@ -195,6 +195,7 @@ pub fn get_arg(content: String) -> String {
     args.join(" ")
 }
 
+/// Link your Maloja server with mljboard through mljboard-client.
 #[poise::command(slash_command)]
 pub async fn hos_setup(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
@@ -202,6 +203,7 @@ pub async fn hos_setup(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Er
     Ok(())
 }
 
+/// Link your Maloja server with mljboard by pointing it to your public website.
 #[poise::command(slash_command)]
 pub async fn website_setup(
     ctx: poise::Context<'_, BotData, Error>,
@@ -212,6 +214,7 @@ pub async fn website_setup(
     Ok(())
 }
 
+/// Add a Last.FM account so that you can compare with Maloja users on mljboard.
 #[poise::command(slash_command)]
 pub async fn lfm_setup(
     ctx: poise::Context<'_, BotData, Error>,
@@ -222,6 +225,7 @@ pub async fn lfm_setup(
     Ok(())
 }
 
+/// Unlink HOS, websites, and Last.FM accounts.
 #[poise::command(slash_command)]
 pub async fn reset(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
@@ -229,6 +233,7 @@ pub async fn reset(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error>
     Ok(())
 }
 
+/// Get your scrobbles alltime and within a year.
 #[poise::command(slash_command)]
 pub async fn scrobbles(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Error> {
     let formatted_user = format_user(ctx.author().clone());
@@ -245,6 +250,7 @@ pub async fn scrobbles(ctx: poise::Context<'_, BotData, Error>) -> Result<(), Er
     Ok(())
 }
 
+/// Get the amount of scrobbles you have for a singular artist.
 #[poise::command(slash_command)]
 pub async fn artistscrobbles(
     ctx: poise::Context<'_, BotData, Error>,
@@ -265,6 +271,7 @@ pub async fn artistscrobbles(
     Ok(())
 }
 
+/// Gets the info about a Last.FM user.
 #[poise::command(slash_command)]
 pub async fn lfmuser(
     ctx: poise::Context<'_, BotData, Error>,
