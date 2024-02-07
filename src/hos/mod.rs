@@ -1,7 +1,7 @@
 pub mod json;
 
 use crate::hos::json::HOSConnectionList;
-use mljcl::MalojaCredentials;
+use mljcl::credentials::*;
 use reqwest::Client;
 use std::collections::HashMap;
 
@@ -32,13 +32,12 @@ pub fn get_maloja_creds_for_sid(
     if let Some(passwd) = hos_server_passwd {
         headers.insert("HOS-PASSWD".to_string(), passwd);
     }
-    MalojaCredentials {
-        https: hos_server_https,
-        skip_cert_verification: !hos_server_https,
-        ip: hos_server_ip,
-        port: hos_server_port,
-        path: Some("/sid/".to_owned() + &sid),
-        headers: Some(headers),
-        api_key: None,
-    }
+    MalojaCredentialsBuilder::new()
+    .https(hos_server_https)
+    .skip_cert_verification(!hos_server_https)
+    .ip(hos_server_ip)
+    .port(hos_server_port)
+    .path("/sid/".to_owned() + &sid)
+    .headers(headers)
+    .build().unwrap()
 }

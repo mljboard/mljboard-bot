@@ -1,7 +1,7 @@
 use crate::db::postgres::{get_discord_pairing_code, get_lastfm_username, get_websites};
 use crate::hos::*;
 use core::num::NonZeroU16;
-use mljcl::MalojaCredentials;
+use mljcl::credentials::*;
 use poise::serenity_prelude::*;
 use sqlx::PgPool;
 use std::result::Result;
@@ -125,18 +125,16 @@ impl BotData {
                         if ip.is_none() {
                             return Err(None);
                         }
-                        let creds = MalojaCredentials {
-                            https,
-                            skip_cert_verification: false,
-                            ip: parsed.host_str().unwrap().to_string(),
-                            port: parsed.port().unwrap_or(match https {
-                                true => 443,
-                                false => 80,
-                            }),
-                            path: Some(parsed.path().to_string()),
-                            headers: None,
-                            api_key: None,
-                        };
+                        let creds = MalojaCredentialsBuilder::new()
+                        .https(https)
+                        .skip_cert_verification(false)
+                        .ip(parsed.host_str().unwrap().to_string())
+                        .port(parsed.port().unwrap_or(match https {
+                            true => 443,
+                            false => 80,
+                        }))
+                        .path(parsed.path().to_string())
+                        .build().unwrap();
                         Ok(creds)
                     }
                     Err(error) => Err(Some(error)),
