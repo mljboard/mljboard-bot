@@ -33,11 +33,12 @@ pub fn get_maloja_creds_for_sid(
         headers.insert("HOS-PASSWD".to_string(), passwd);
     }
     MalojaCredentialsBuilder::new()
-    .https(hos_server_https)
-    .skip_cert_verification(!hos_server_https)
-    .ip(hos_server_ip)
-    .port(hos_server_port)
-    .path("/sid/".to_owned() + &sid)
-    .headers(headers)
-    .build().unwrap()
+        .https(hos_server_https)
+        .skip_cert_verification(!hos_server_https)
+        .ip(hos_server_ip)
+        .port(hos_server_port)
+        .path("/sid/".to_owned() + &sid)
+        .headers(headers)
+        .build()
+        .unwrap()
 }

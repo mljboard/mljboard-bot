@@ -126,15 +126,16 @@ impl BotData {
                             return Err(None);
                         }
                         let creds = MalojaCredentialsBuilder::new()
-                        .https(https)
-                        .skip_cert_verification(false)
-                        .ip(parsed.host_str().unwrap().to_string())
-                        .port(parsed.port().unwrap_or(match https {
-                            true => 443,
-                            false => 80,
-                        }))
-                        .path(parsed.path().to_string())
-                        .build().unwrap();
+                            .https(https)
+                            .skip_cert_verification(false)
+                            .ip(parsed.host_str().unwrap().to_string())
+                            .port(parsed.port().unwrap_or(match https {
+                                true => 443,
+                                false => 80,
+                            }))
+                            .path(parsed.path().to_string())
+                            .build()
+                            .unwrap();
                         Ok(creds)
                     }
                     Err(error) => Err(Some(error)),
