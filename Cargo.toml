@@ -34,3 +34,4 @@ sqlx = { version = "0.7.3", features = ["postgres", "runtime-tokio"] }
 futures-util = "0.3.30"
 poise = { git = "https://github.com/serenity-rs/poise", features = ["collector"] }
 lfm-stats = { git = "https://github.com/duckfromdiscord/lfm-stats-rs", version = "0.1.0" }
+image = "0.24.8"

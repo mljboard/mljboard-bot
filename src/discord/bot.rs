@@ -270,6 +270,34 @@ pub async fn artistscrobbles(
     Ok(())
 }
 
+/// A grid of your top listened albums of all time.
+#[poise::command(slash_command, prefix_command)]
+pub async fn grid(
+    ctx: poise::Context<'_, BotData, Error>,
+    #[description = "Square size"] square_size: usize,
+) -> Result<(), Error> {
+    let formatted_user = format_user(ctx.author().clone());
+    let user = ctx.data().handle_creds(formatted_user, ctx).await;
+
+    if user.is_none() {
+        ctx.say("You don't have a HOS pairing code or a website set up.")
+            .await
+            .unwrap();
+        return Ok(());
+    }
+
+    super::ops::grid_cmd(
+        ctx.data().reqwest_client.clone(),
+        user,
+        None,
+        ctx,
+        square_size,
+        mljcl::range::Range::AllTime,
+    )
+    .await;
+    Ok(())
+}
+
 /// Gets the info about a Last.FM user.
 #[poise::command(slash_command)]
 pub async fn lfmuser(

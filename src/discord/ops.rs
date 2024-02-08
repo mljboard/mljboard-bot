@@ -1,12 +1,18 @@
 use super::bot::{Context, MljboardUser};
 use crate::discord::lastfm::get_lastfm_user;
 use crate::discord::lastfm::LfmRange;
+use image::ImageBuffer;
+use image::RgbaImage;
 use mljcl::history::numscrobbles_async;
 use mljcl::range::Range as MljRange;
 use poise::CreateReply;
 use reqwest::Client;
-use serenity::all::{CreateEmbed, CreateMessage, Message};
+use serenity::all::{CreateAttachment, CreateEmbed, CreateMessage, Message};
+use std::io::Cursor;
 use std::time::SystemTime;
+
+use image::imageops::FilterType;
+use image::DynamicImage;
 
 pub enum GetScrobbleCountFailed {
     UserNotFound,
@@ -183,6 +189,102 @@ pub async fn scrobbles_cmd(
             }
             None => {
                 ctx.send(CreateReply::default().embed(embed)).await.unwrap();
+            }
+        }
+    }
+}
+
+pub async fn grid_cmd(
+    client: Client,
+    user: Option<MljboardUser>,
+    _msg: Option<Message>,
+    ctx: Context<'_>,
+    square_size: usize,
+    range: mljcl::range::Range,
+) {
+    let album_count = square_size.pow(2);
+
+    if let Some(user) = user {
+        match user {
+            MljboardUser::MalojaUser(user) => {
+                ctx.defer().await.unwrap(); // Apparently needed for size > 1 because requests simply take too long
+
+                let albums_ranked =
+                    mljcl::charts::charts_albums_async(range, None, user.clone(), client.clone())
+                        .await
+                        .map(|x| x.albums);
+                if let Ok(mut albums_ranked) = albums_ranked {
+                    albums_ranked.truncate(album_count);
+                    let top_album_ids: Vec<String> = albums_ranked
+                        .into_iter()
+                        .map(|(album, _)| album.id)
+                        .collect();
+
+                    let image_width = 64;
+                    let image_height = 64;
+
+                    let mut grid_image: RgbaImage = ImageBuffer::new(
+                        image_width * square_size as u32,
+                        image_height * square_size as u32,
+                    );
+
+                    let mut x = 0;
+                    let mut y = 0;
+
+                    let mut image_count = 0;
+
+                    for album_id in top_album_ids {
+                        let album_art_bytes =
+                            mljcl::art::album_art_async(album_id, user.clone(), client.clone())
+                                .await
+                                .unwrap();
+                        if let Ok(img) = image::load_from_memory(&album_art_bytes) {
+                            let mut image = DynamicImage::ImageRgba8(image::imageops::resize(
+                                &img,
+                                image_width,
+                                image_height,
+                                FilterType::CatmullRom,
+                            ));
+                            image::imageops::overlay(
+                                &mut grid_image,
+                                image.as_mut_rgba8().unwrap(),
+                                x,
+                                y,
+                            );
+                            image_count += 1;
+                            x += 64;
+                            if image_count >= square_size {
+                                x = 0;
+                                y += 64;
+                                image_count = 0;
+                            }
+                        }
+                    }
+
+                    let mut grid_image_bytes: Vec<u8> = Vec::new();
+                    grid_image
+                        .write_to(
+                            &mut Cursor::new(&mut grid_image_bytes),
+                            image::ImageOutputFormat::Png,
+                        )
+                        .unwrap();
+                    let attachment = CreateAttachment::bytes(grid_image_bytes, "grid.png");
+
+                    let message = CreateReply::default()
+                        .attachment(attachment)
+                        .embed(CreateEmbed::new().attachment("grid.png"));
+
+                    ctx.send(message).await.unwrap();
+                } else {
+                    ctx.reply("There was an error getting your album chart.")
+                        .await
+                        .unwrap();
+                }
+            }
+            MljboardUser::LastFMUser(_) => {
+                ctx.reply("Grids are not implemented for Last.FM users yet.")
+                    .await
+                    .unwrap();
             }
         }
     }

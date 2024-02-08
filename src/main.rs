@@ -31,6 +31,7 @@ pub async fn run(
                 scrobbles(),
                 artistscrobbles(),
                 lfmuser(),
+                grid(),
             ],
             ..Default::default()
         })
